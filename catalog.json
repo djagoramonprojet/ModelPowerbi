@@ -1,0 +1,42 @@
+{
+  "project_name": "Revenue_Analysis_2023",
+  "csv_file": "mock_data.csv",
+  "table_name": "Ventes_2023",
+  "page_name": "Rapport Chiffre d'Affaires",
+  "columns": [
+    {
+      "name": "region",
+      "type": "text",
+      "summarize": "none",
+      "role": "dimension"
+    },
+    {
+      "name": "sales",
+      "type": "number",
+      "summarize": "sum",
+      "format": "$#,##0.00",
+      "role": "measure"
+    }
+  ],
+  "measures": [
+    {
+      "name": "Total Sales",
+      "expression": "SUM('Ventes_2023'[sales])",
+      "format": "$#,##0.00"
+    }
+  ],
+  "charts": [
+    {
+      "type": "barChart",
+      "title": "Sales by Region",
+      "x": 20,
+      "y": 20,
+      "width": 800,
+      "height": 450,
+      "category": "region",
+      "values": [
+        "sales"
+      ]
+    }
+  ]
+}

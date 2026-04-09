@@ -1,0 +1,63 @@
+{
+  "compatibilityLevel": 1567,
+  "model": {
+    "culture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "sourceQueryCulture": "en-US",
+    "tables": [
+      {
+        "name": "Ventes_2023",
+        "columns": [
+          {
+            "name": "region",
+            "dataType": "string",
+            "sourceColumn": "region",
+            "summarizeBy": "none"
+          },
+          {
+            "name": "sales",
+            "dataType": "double",
+            "sourceColumn": "sales",
+            "summarizeBy": "sum",
+            "formatString": "$#,##0.00"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Ventes_2023-partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let",
+                "    Source = Csv.Document(File.Contents(\"C:\\\\Users\\\\khair\\\\OneDrive\\\\Desktop\\\\PowerBI\\\\output\\\\Revenue_Analysis_2023\\\\Revenue_Analysis_2023.SemanticModel\\\\mock_data.csv\"), [Delimiter=\",\", Columns=6, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),",
+                "    PromotedHeaders = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),",
+                "    SelectedColumns = Table.SelectColumns(PromotedHeaders, {\"region\", \"sales\"}),",
+                "    ChangedTypes = Table.TransformColumnTypes(SelectedColumns, {{\"region\", type text}, {\"sales\", type number}})",
+                "in",
+                "    ChangedTypes"
+              ]
+            }
+          }
+        ],
+        "measures": [
+          {
+            "name": "Total Sales",
+            "expression": "SUM('Ventes_2023'[sales])",
+            "formatString": "$#,##0.00"
+          }
+        ]
+      }
+    ],
+    "annotations": [
+      {
+        "name": "PBI_QueryOrder",
+        "value": "[\"Ventes_2023\"]"
+      }
+    ]
+  }
+}

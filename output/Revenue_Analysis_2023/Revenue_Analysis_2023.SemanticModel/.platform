@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Revenue_Analysis_2023"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "25664475-d6e8-4aa5-9f6c-bf48783f7e49"
+  }
+}

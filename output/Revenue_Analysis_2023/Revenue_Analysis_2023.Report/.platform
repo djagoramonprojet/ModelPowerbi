@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Revenue_Analysis_2023"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "9d038c41-e626-4d3d-b46e-750422163f21"
+  }
+}
