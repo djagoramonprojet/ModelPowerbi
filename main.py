@@ -11,7 +11,10 @@ import json
 import shutil
 import argparse
 
-from catalog  import validate_catalog, prepare_catalog, build_readme
+from catalog  import (
+    validate_catalog, prepare_catalog, build_readme,
+    is_intent_catalog, translate_intent_to_catalog
+)
 from builders import (
     build_pbip, build_platform, build_definition_pbism,
     build_definition_pbir, build_model_bim, build_report_json, build_theme,
@@ -109,17 +112,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    # ── Optional local overrides (remove for production) ──────────────────
-    CATALOG_PATH = r"C:/Users/khair/OneDrive/Desktop/PowerBI/catalog.json"
-    CSV_PATH     = r"C:/Users/khair/OneDrive/Desktop/PowerBI/data/mock_data.csv"
-    OUTPUT_DIR   = r"C:/Users/khair/OneDrive/Desktop/PowerBI/output"
-
-    if os.path.exists(CATALOG_PATH):
-        args.catalog = CATALOG_PATH
-    if os.path.exists(CSV_PATH) and not args.csv:
-        args.csv = CSV_PATH
-    if not args.output or args.output == ".":
-        args.output = OUTPUT_DIR
     # ──────────────────────────────────────────────────────────────────────
 
     catalog, csv_to_copy = None, args.csv
@@ -141,7 +133,36 @@ def main() -> None:
         print(f"\n[Reading catalog] {args.catalog}")
         with open(args.catalog, "r", encoding="utf-8") as f:
             catalog = json.load(f)
-        csv_to_copy = args.csv or catalog.get("csv_file")
+        
+        # ── Intent-based logic ──────────────────────────────────────────
+        if is_intent_catalog(catalog):
+            print(f"  [Detected] Intent-based catalog format")
+            
+            # We NEED a CSV for intent interpretation
+            csv_for_intent = args.csv or None
+            
+            # Try to find a CSV in the current directory if not specified
+            if not csv_for_intent:
+                csv_files = [f for f in os.listdir(".") if f.endswith(".csv")]
+                if len(csv_files) == 1:
+                    csv_for_intent = csv_files[0]
+                    print(f"  [Auto-picked] CSV for inference: {csv_for_intent}")
+                elif len(csv_files) > 1:
+                    print(f"  ⚠ Warning: Multiple CSVs found, please specify one via --csv")
+            
+            if not csv_for_intent:
+                print(f"ERROR: Intent-based catalog requires a CSV for schema inference.")
+                print(f"       Please provide --csv path/to/data.csv")
+                raise SystemExit(1)
+            
+            # 1. Infer standard catalog from CSV
+            base_catalog = infer_catalog_from_csv(csv_for_intent)
+            
+            # 2. Translate intent over the inferred catalog
+            catalog = translate_intent_to_catalog(catalog, base_catalog)
+            csv_to_copy = csv_for_intent
+        else:
+            csv_to_copy = args.csv or catalog.get("csv_file")
 
     # Sync csv_file name if the actual file differs
     actual_filename = os.path.basename(csv_to_copy) if csv_to_copy else ""
@@ -157,7 +178,7 @@ def main() -> None:
             json.dump({k: v for k, v in catalog.items() if not k.startswith("_")}, f, indent=2)
         print(f"  Selections saved back to: {args.catalog}")
 
-    build_project(catalog, output_dir=args.output, csv_source_path=csv_to_copy)
+    build_project(catalog, output_dir="C:\\Users\\khair\\OneDrive\\Desktop\\PowerBI\\outputdivise", csv_source_path=csv_to_copy)
 
 
 if __name__ == "__main__":

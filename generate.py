@@ -70,6 +70,114 @@ def get_role(col):
     return col.get("role") or _infer_role(col)
 
 
+# ─────────────────────────────────────────────
+# INTENT-BASED (ANALYSIS RESULT) SUPPORT
+# ─────────────────────────────────────────────
+
+def is_intent_catalog(catalog):
+    """Detect if the catalog is the new 'Intent/Analysis' format."""
+    return "data_intent" in catalog or "visualization" in catalog
+
+
+def translate_intent_to_catalog(intent, inferred_catalog):
+    """
+    Map high-level intent onto a full inferred catalog.
+    """
+    cat = dict(inferred_catalog)
+    data_intent = intent.get("data_intent", {})
+    vis         = intent.get("visualization", {})
+    
+    # 1. Get primary measure name and aggregation
+    intent_meas = data_intent.get("measure", "sales").lower()
+    intent_agg  = data_intent.get("aggregation", "sum").upper()
+    
+    # Common Aliases
+    aliases = {
+        "sales": ["profit", "revenue", "amount", "total", "spend", "cost"],
+        "revenue": ["sales", "profit", "amount"],
+        "profit": ["revenue", "sales", "income"]
+    }
+    
+    # Fuzzy match column name
+    col_names = {c["name"].lower(): c["name"] for c in cat["columns"]}
+    target_col = col_names.get(intent_meas)
+    
+    if not target_col:
+        for cn in col_names:
+            if intent_meas in cn:
+                target_col = col_names[cn]; break
+    
+    if not target_col:
+        possible_aliases = aliases.get(intent_meas, [])
+        for alias in possible_aliases:
+            if alias in col_names:
+                target_col = col_names[alias]; break
+
+    if not target_col and not cat.get("measures"):
+        for c in cat["columns"]:
+            if c.get("type") in ("number", "integer"):
+                target_col = c["name"]; break
+
+    # 2. Update/Create Measures
+    primary_meas_name = None
+    if target_col:
+        primary_meas_name = f"Total {target_col}"
+        new_measure = {
+            "name":       primary_meas_name,
+            "expression": f"{intent_agg}('{cat['table_name']}'[{target_col}])",
+            "format":     "$#,##0.00" if any(x in target_col.lower() for x in ("sales", "profit", "revenue", "spend", "cost")) else "#,##0.00"
+        }
+        cat.setdefault("measures", [])
+        if not any(m["name"] == primary_meas_name for m in cat["measures"]):
+            cat["measures"].insert(0, new_measure)
+
+    if not primary_meas_name and cat.get("measures"):
+        primary_meas_name = cat["measures"][0]["name"]
+
+    # 3. Update Charts
+    rec_chart = vis.get("recommended_chart", "").lower()
+    type_map = {
+        "line": "lineChart", "bar": "barChart", "column": "columnChart",
+        "pie": "pieChart", "donut": "donutChart", "card": "card"
+    }
+    target_type = type_map.get(rec_chart, "barChart")
+    
+    intent_dims = data_intent.get("dimension", [])
+    dim_name = None
+    if intent_dims and isinstance(intent_dims, list) and len(intent_dims) > 0:
+        dim_name = col_names.get(intent_dims[0].lower())
+    
+    if not dim_name:
+        if target_type == "lineChart":
+            d_dims = date_dims(cat)
+            if d_dims: dim_name = d_dims[0]["name"]
+        
+        if not dim_name:
+            t_dims = text_dims(cat)
+            if t_dims: dim_name = t_dims[0]["name"]
+
+    primary_chart = {
+        "type": target_type,
+        "title": intent.get("explanation", "Data Analysis Result"),
+        "x": 20, "y": 20, "width": 800, "height": 450,
+        "values": [primary_meas_name] if primary_meas_name else []
+    }
+    if dim_name and target_type != "card":
+        primary_chart["category"] = dim_name
+
+    new_charts = [primary_chart]
+    if target_type != "card" and cat.get("measures"):
+         new_charts.insert(0, {
+            "type": "card", "title": f"Summary of {target_col or intent_meas}",
+            "x": 840, "y": 20, "width": 400, "height": 220,
+            "values": [cat["measures"][0]["name"]]
+        })
+
+    cat["charts"] = new_charts
+    cat["page_name"] = "Analysis Result"
+    return cat
+
+
 def dimension_cols(catalog):
     """Return columns whose role is 'dimension'."""
     return [c for c in catalog["columns"] if get_role(c) == "dimension"]
@@ -852,6 +960,45 @@ def prepare_catalog(catalog, csv_source_path=None):
             col["role"] = _infer_role(col)
             changed = True
 
+    # ─────────────────────────────────────────────────────────
+    # AUTOMATIC CHART REPAIR / COMPLETION
+    # If a chart is missing values or category, try to fill them!
+    # ─────────────────────────────────────────────────────────
+    mcols = measure_cols(catalog)
+    dax_meas = [m["name"] for m in catalog.get("measures", [])]
+    # Fallback to DAX measures if possible, otherwise use numeric columns
+    best_val = dax_meas[0] if dax_meas else (mcols[0]["name"] if mcols else None)
+
+    for chart in catalog.get("charts", []):
+        ctype = chart.get("type", "barChart")
+        
+        # 1. Autopick Values if empty
+        if not chart.get("values") and best_val:
+            chart["values"] = [best_val]
+            changed = True
+            print(f"  [Auto-chart] Added values '{best_val}' to '{chart.get('title')}'")
+
+        # 2. Autopick Category if empty (except for Card)
+        if ctype != "card" and not chart.get("category"):
+            if ctype == "lineChart":
+                dates = date_dims(catalog)
+                if dates:
+                    chart["category"] = dates[0]["name"]
+                    changed = True
+                else:
+                    texts = text_dims(catalog)
+                    if texts:
+                        chart["category"] = texts[0]["name"]
+                        changed = True
+            else:
+                texts = text_dims(catalog)
+                if texts:
+                    chart["category"] = texts[0]["name"]
+                    changed = True
+            
+            if chart.get("category"):
+                print(f"  [Auto-chart] Added category '{chart['category']}' to '{chart.get('title')}'")
+
     dims = [c["name"] for c in dimension_cols(catalog)]
     meas = [c["name"] for c in measure_cols(catalog)]
     print(f"  Selection result -> Dimensions: {len(dims)} | Measures: {len(meas)}")
@@ -914,7 +1061,26 @@ if __name__ == "__main__":
         print(f"\n[Reading catalog] {args.catalog}")
         with open(args.catalog, "r", encoding="utf-8") as f:
             catalog = json.load(f)
-        csv_to_copy = args.csv or catalog.get("csv_file")
+        
+        # --- Handle Intent format ---
+        if is_intent_catalog(catalog):
+            print(f"  [Detected] Intent-based catalog format")
+            csv_for_intent = args.csv or None
+            if not csv_for_intent:
+                csv_files = [f for f in os.listdir(".") if f.endswith(".csv")]
+                if len(csv_files) == 1:
+                    csv_for_intent = csv_files[0]
+                    print(f"  [Auto-picked] CSV for inference: {csv_for_intent}")
+            
+            if not csv_for_intent:
+                print(f"ERROR: Intent-based catalog requires a CSV. Use --csv")
+                exit(1)
+            
+            base_catalog = infer_catalog_from_csv(csv_for_intent)
+            catalog = translate_intent_to_catalog(catalog, base_catalog)
+            csv_to_copy = csv_for_intent
+        else:
+            csv_to_copy = args.csv or catalog.get("csv_file")
 
     actual_csv_filename = os.path.basename(csv_to_copy) if csv_to_copy else ""
     if catalog.get("csv_file") and actual_csv_filename and catalog.get("csv_file") != actual_csv_filename:

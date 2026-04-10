@@ -9,6 +9,137 @@ from constants import (
 
 
 # ─────────────────────────────────────────────
+# Intent-based (Analysis Result) support
+# ─────────────────────────────────────────────
+
+def is_intent_catalog(catalog: dict) -> bool:
+    """Detect if the catalog is the new 'Intent/Analysis' format."""
+    return "data_intent" in catalog or "visualization" in catalog
+
+
+def translate_intent_to_catalog(intent: dict, inferred_catalog: dict) -> dict:
+    """
+    Map high-level intent onto a full inferred catalog.
+    
+    1. Extracts measure, aggregation, and dimensions from data_intent.
+    2. Overrides charts with the recommended visualization.
+    """
+    cat = dict(inferred_catalog)
+    data_intent = intent.get("data_intent", {})
+    vis         = intent.get("visualization", {})
+    
+    # 1. Get primary measure name and aggregation
+    intent_meas = data_intent.get("measure", "sales").lower()
+    intent_agg  = data_intent.get("aggregation", "sum").upper()
+    
+    # Common Aliases
+    aliases = {
+        "sales": ["profit", "revenue", "amount", "total", "spend", "cost"],
+        "revenue": ["sales", "profit", "amount"],
+        "profit": ["revenue", "sales", "income"]
+    }
+    
+    # We need to find the column in the inferred catalog that matches the intent measure
+    col_names = {c["name"].lower(): c["name"] for c in cat["columns"]}
+    target_col = col_names.get(intent_meas)
+    
+    if not target_col:
+        # Fuzzy match
+        for cn in col_names:
+            if intent_meas in cn:
+                target_col = col_names[cn]
+                break
+    
+    if not target_col:
+        # Alias match
+        possible_aliases = aliases.get(intent_meas, [])
+        for alias in possible_aliases:
+            if alias in col_names:
+                target_col = col_names[alias]
+                break
+    
+    if not target_col and not cat.get("measures"):
+        # Fallback to any numeric column
+        for c in cat["columns"]:
+            if c.get("type") in ("number", "integer", "double", "int64"):
+                target_col = c["name"]
+                break
+
+    # 2. Update/Create Measure
+    primary_meas_name = None
+    if target_col:
+        primary_meas_name = f"Total {target_col}"
+        new_measure = {
+            "name":       primary_meas_name,
+            "expression": f"{intent_agg}('{cat['table_name']}'[{target_col}])",
+            "format":     "$#,##0.00" if any(x in target_col.lower() for x in ("sales", "profit", "revenue", "spend", "cost")) else "#,##0.00"
+        }
+        # Prepend to measures (create list if missing)
+        cat.setdefault("measures", [])
+        # Avoid duplicates
+        if not any(m["name"] == primary_meas_name for m in cat["measures"]):
+            cat["measures"].insert(0, new_measure)
+    
+    # If we still have no measure name but have measures, pick the first one
+    if not primary_meas_name and cat.get("measures"):
+        primary_meas_name = cat["measures"][0]["name"]
+
+    # 3. Update Charts
+    rec_chart = vis.get("recommended_chart", "").lower()
+    
+    # Map high-level names to internal chart types
+    # "line" -> "lineChart", "bar" -> "barChart", etc.
+    type_map = {
+        "line": "lineChart",
+        "bar": "barChart",
+        "column": "columnChart",
+        "pie": "pieChart",
+        "donut": "donutChart",
+        "card": "card",
+        "table": "table",
+    }
+    target_type = type_map.get(rec_chart, "barChart")
+    
+    # Build the primary chart
+    # We need a dimension for breakdown. If intent has dimensions, use them.
+    # Otherwise fallback to first text dimension from catalog.
+    intent_dims = data_intent.get("dimension", [])
+    dim_name = None
+    if intent_dims and isinstance(intent_dims, list) and len(intent_dims) > 0:
+        dim_name = col_names.get(intent_dims[0].lower())
+    
+    if not dim_name:
+        text_cols = text_dims(cat)
+        if text_cols:
+            dim_name = text_cols[0]["name"]
+
+    primary_chart = {
+        "type": target_type,
+        "title": intent.get("explanation", "Data Analysis Result"),
+        "x": 20, "y": 20, "width": 800, "height": 450,
+        "values": [primary_meas_name] if primary_meas_name else []
+    }
+    if dim_name and target_type != "card":
+        primary_chart["category"] = dim_name
+
+    # Replace auto-generated charts with our specific one + maybe a card
+    new_charts = [primary_chart]
+    
+    # Add a KPI Card if the primary chart isn't a card
+    if target_type != "card" and cat.get("measures"):
+         new_charts.insert(0, {
+            "type": "card", "title": f"Summary of {target_col or intent_meas}",
+            "x": 840, "y": 20, "width": 400, "height": 220,
+            "values": [cat["measures"][0]["name"]]
+        })
+
+    cat["charts"] = new_charts
+    cat["page_name"] = "Analysis Result"
+    
+    return cat
+
+
+# ─────────────────────────────────────────────
 # Auto-generation
 # ─────────────────────────────────────────────
 

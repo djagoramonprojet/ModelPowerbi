@@ -1,42 +1,27 @@
 {
-  "project_name": "Revenue_Analysis_2023",
-  "csv_file": "mock_data.csv",
-  "table_name": "Ventes_2023",
-  "page_name": "Rapport Chiffre d'Affaires",
-  "columns": [
-    {
-      "name": "region",
-      "type": "text",
-      "summarize": "none",
-      "role": "dimension"
-    },
-    {
-      "name": "sales",
-      "type": "number",
-      "summarize": "sum",
-      "format": "$#,##0.00",
-      "role": "measure"
-    }
+  "is_valid": true,
+  "explanation": "La requête demande les meilleures ventes dans la région Est par date.",
+  "data_intent": {
+    "measure": "sales",
+    "dimension": [],
+    "filters": {},
+    "aggregation": "sum"
+  },
+  "visualization": {
+    "recommended_chart": "line",
+    "reason": "Un graphique en ligne est approprié pour afficher les meilleures ventes par date."
+  },
+  "suggestions": [
+    "Ventes totales dans la région Est",
+    "Meilleures ventes dans la région Est par mois"
   ],
-  "measures": [
-    {
-      "name": "Total Sales",
-      "expression": "SUM('Ventes_2023'[sales])",
-      "format": "$#,##0.00"
-    }
-  ],
-  "charts": [
-    {
-      "type": "barChart",
-      "title": "Sales by Region",
-      "x": 20,
-      "y": 20,
-      "width": 800,
-      "height": 450,
-      "category": "region",
-      "values": [
-        "sales"
-      ]
-    }
-  ]
+  "conversationId": "69d66ae4d45c80f02465d11a",
+  "analysis": {
+    "cached": true,
+    "analysisHistoryId": "69d66ae4d45c80f02465d119",
+    "fileIds": [
+      "69d66ac3d45c80f02465d118"
+    ],
+    "hasRelation": false
+  }
 }
